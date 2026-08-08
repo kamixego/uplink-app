@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Uplink — live call prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0E1016;
+    --bg-grid: #14161F;
+    --surface: #191C26;
+    --surface-2: #222633;
+    --border: #2B2F3D;
+    --text: #EDEFF5;
+    --text-dim: #9297AB;
+    --text-faint: #5C6178;
+    --accent: #7CFFB2;
+    --accent-strong: #4FE79A;
+    --accent-dim: rgba(124,255,178,0.12);
+    --danger: #FF6B4A;
+    --danger-dim: rgba(255,107,74,0.14);
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+
+  *{ box-sizing: border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  button{ font-family: inherit; }
+
+  .grid-bg{
+    position:fixed; inset:0; z-index:0; pointer-events:none;
+    background-image:
+      linear-gradient(var(--bg-grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px);
+    background-size: 42px 42px;
+    opacity:0.5;
+  }
+
+  .app{ position:relative; z-index:1; height:100vh; width:100vw; }
+
+  .eyebrow{
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+  .pulse-dot{
+    width:7px; height:7px; border-radius:50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 0 rgba(124,255,178,0.6);
+    animation: pulse 2s infinite;
+    flex-shrink:0;
+  }
+  @keyframes pulse{
+    0%{ box-shadow: 0 0 0 0 rgba(124,255,178,0.45); }
+    70%{ box-shadow: 0 0 0 8px rgba(124,255,178,0); }
+    100%{ box-shadow: 0 0 0 0 rgba(124,255,178,0); }
+  }
+  .idle-dot{ background: var(--text-faint); animation:none; }
+
+  /* ================= LOBBY ================= */
+  #lobby{
+    position:relative; z-index:1;
+    height:100%; width:100%;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .lobby-row{ display:flex; align-items:center; justify-content:center; gap:56px; }
+  .lobby-center{ display:flex; flex-direction:column; align-items:center; gap:28px; }
+  .side-panel{ display:flex; flex-direction:column; align-items:center; gap:16px; width:150px; flex-shrink:0; }
+  .side-tag{
+    font-family: var(--mono); font-size:52px; font-weight:600;
+    color: var(--accent); letter-spacing:0.03em; line-height:1;
+    text-shadow: 0 0 24px rgba(124,255,178,0.25);
+  }
+  .side-gif{
+    width:150px; height:190px; object-fit:cover; border-radius:14px;
+    border:1px solid var(--border); box-shadow:0 10px 26px rgba(0,0,0,0.4);
+  }
+  @media (max-width: 980px){ .side-panel{ display:none; } }
+  .logo{
+    display:flex; align-items:center; gap:10px;
+    font-family: var(--mono); font-weight:600; font-size:15px;
+    letter-spacing:0.06em;
+  }
+  .logo .mark{
+    width:20px; height:20px; border-radius:4px;
+    background: var(--accent-dim);
+    border:1px solid rgba(124,255,178,0.35);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .logo .mark span{ width:6px; height:6px; border-radius:50%; background: var(--accent); }
+
+  .card{
+    width: 380px;
+    background: var(--surface);
+    border:1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px;
+    position: relative;
+    overflow:hidden;
+  }
+  .card::before{
+    content:"";
+    position:absolute; top:0; left:-100%;
+    width:100%; height:1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: scan 2.4s ease-in-out 1;
+  }
+  @keyframes scan{ to{ left:100%; } }
+
+  .card h1{ font-size:17px; margin:0 0 4px; font-weight:600; }
+  .card p.sub{ margin:0 0 22px; color:var(--text-dim); font-size:13px; line-height:1.5; }
+
+  .tabs{ display:flex; gap:4px; background:var(--surface-2); padding:3px; border-radius:9px; margin-bottom:20px; }
+  .tabs button{
+    flex:1; border:none; background:transparent; color:var(--text-dim);
+    padding:8px 0; border-radius:7px; font-size:13px; font-weight:500; cursor:pointer;
+    transition: all .15s ease;
+  }
+  .tabs button.active{ background: var(--surface); color:var(--text); box-shadow:0 1px 0 rgba(0,0,0,0.2); }
+
+  label{ display:block; font-size:12px; color:var(--text-dim); margin-bottom:6px; font-weight:500; }
+  input[type=text]{
+    width:100%; background: var(--bg); border:1px solid var(--border);
+    color:var(--text); padding:10px 12px; border-radius:8px; font-size:14px;
+    font-family: var(--sans); margin-bottom:16px; outline:none;
+    transition: border-color .15s ease;
+  }
+  input[type=text]:focus{ border-color: var(--accent); }
+  input.mono{ font-family: var(--mono); letter-spacing:0.08em; text-transform:uppercase; }
+
+  .btn-primary{
+    width:100%; padding:11px 0; border-radius:8px; border:none;
+    background: var(--accent); color:#08130D; font-weight:600; font-size:14px;
+    cursor:pointer; transition: transform .1s ease, background .15s ease;
+  }
+  .btn-primary:hover{ background: var(--accent-strong); }
+  .btn-primary:active{ transform: scale(0.98); }
+  .btn-primary:disabled{ opacity:0.4; cursor:not-allowed; }
+
+  .pane{ display:none; }
+  .pane.active{ display:block; }
+
+  #waitState{ display:none; text-align:center; }
+  #waitState.active{ display:block; }
+  .code-display{
+    font-family: var(--mono); font-size:30px; font-weight:600;
+    letter-spacing:0.12em; color: var(--accent);
+    background: var(--bg); border:1px dashed var(--border);
+    border-radius:10px; padding:16px 0; margin: 4px 0 12px;
+  }
+  .copy-row{ display:flex; gap:8px; margin-bottom:20px; }
+  .btn-ghost{
+    flex:1; padding:9px 0; border-radius:8px; border:1px solid var(--border);
+    background:transparent; color:var(--text); font-size:13px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+    transition: border-color .15s ease, color .15s ease;
+  }
+  .btn-ghost:hover{ border-color: var(--text-dim); }
+  .waiting-line{
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    color:var(--text-dim); font-size:13px; margin-bottom:4px;
+  }
+  .dots span{ animation: blink 1.4s infinite; opacity:0; }
+  .dots span:nth-child(2){ animation-delay:.2s; }
+  .dots span:nth-child(3){ animation-delay:.4s; }
+  @keyframes blink{ 0%,100%{opacity:0;} 50%{opacity:1;} }
+
+  .self-preview{
+    margin-top:18px; width:100%; aspect-ratio: 16/10; border-radius:10px;
+    background:#000; overflow:hidden; border:1px solid var(--border); position:relative;
+  }
+  .self-preview video{ width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+  .self-preview .tag{
+    position:absolute; bottom:8px; left:8px; font-family:var(--mono); font-size:10px;
+    background:rgba(0,0,0,0.55); padding:3px 7px; border-radius:5px; color:var(--text-dim);
+  }
+
+  .error-line{ color:var(--danger); font-size:12px; margin-top:10px; display:none; }
+
+  /* ================= CALL SCREEN ================= */
+  #callScreen{ display:none; height:100%; width:100%; flex-direction:column; }
+  #callScreen.active{ display:flex; }
+
+  .topbar{
+    height:52px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 0 18px;
+    border-bottom:1px solid var(--border);
+    background: rgba(25,28,38,0.6);
+  }
+  .topbar-left, .topbar-right{ display:flex; align-items:center; gap:14px; }
+  .chip{
+    display:flex; align-items:center; gap:7px;
+    font-family:var(--mono); font-size:11px; color:var(--text-dim);
+    background:var(--surface-2); border:1px solid var(--border);
+    padding:5px 10px; border-radius:20px;
+  }
+  .chip b{ color:var(--text); font-weight:600; letter-spacing:0.06em; }
+  .chip.copy-chip{ cursor:pointer; }
+  .chip.copy-chip:hover{ border-color: var(--text-dim); }
+  .live-chip{ color: var(--accent); border-color: rgba(124,255,178,0.3); background: var(--accent-dim); }
+
+  .stage-wrap{
+    flex:1; position:relative; display:flex; align-items:center; justify-content:center;
+    padding: 20px; min-height:0;
+  }
+
+  .stage{
+    position:relative;
+    width:100%; height:100%;
+    max-width: 1400px;
+    border-radius:14px;
+    background: var(--surface);
+    border:1px solid var(--border);
+    overflow:hidden;
+    display:flex; align-items:center; justify-content:center;
+    transition: border-radius .2s ease;
+  }
+  .stage.is-fullscreen{ border-radius:0; max-width:none; border:none; }
+  .stage video{ width:100%; height:100%; object-fit:contain; background:#000; }
+
+  #stageVideo{ pointer-events:none; }
+
+  .no-signal{
+    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+    background: repeating-linear-gradient(115deg, #1B1E27 0 40px, #191C26 40px 80px);
+  }
+  .no-signal .bars{ display:flex; gap:3px; height:34px; opacity:0.35; }
+  .no-signal .bars i{ width:5px; border-radius:2px; }
+  .no-signal .bars i:nth-child(1){ background:#7CFFB2; height:60%; }
+  .no-signal .bars i:nth-child(2){ background:#FF6B4A; height:100%; }
+  .no-signal .bars i:nth-child(3){ background:#5CA7FF; height:45%; }
+  .no-signal .bars i:nth-child(4){ background:#FFD166; height:80%; }
+  .no-signal .bars i:nth-child(5){ background:#C792FF; height:55%; }
+  .no-signal span{ font-family:var(--mono); font-size:11px; letter-spacing:0.14em; color: var(--text-faint); text-transform:uppercase; }
+
+  .stage-label{
+    position:absolute; top:14px; left:14px;
+    font-family:var(--mono); font-size:11px; color:var(--text-dim);
+    background:rgba(0,0,0,0.45); padding:5px 10px; border-radius:6px;
+    display:flex; align-items:center; gap:6px; z-index:6;
+  }
+
+  /* draggable participant tiles — free-floating over the stage */
+  .tile{
+    position:absolute;
+    width:168px; aspect-ratio:16/10;
+    border-radius:10px; overflow:hidden;
+    background:#000; border:1px solid var(--border);
+    box-shadow:0 6px 18px rgba(0,0,0,0.35);
+    z-index:10; cursor:grab; touch-action:none; user-select:none;
+    transition: box-shadow .15s ease;
+  }
+  .tile.dragging{ cursor:grabbing; box-shadow:0 12px 28px rgba(0,0,0,0.5); opacity:0.94; }
+  #selfTile{ right:16px; bottom:16px; }
+  #remoteTile{ right:16px; top:16px; }
+  .tile video{ width:100%; height:100%; object-fit:cover; pointer-events:none; }
+  .tile video.mirror{ transform:scaleX(-1); }
+  .tile .no-cam{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    background: var(--surface-2); color:var(--text-faint);
+    font-family:var(--mono); font-size:22px; font-weight:600;
+  }
+  .tile .meta{
+    position:absolute; bottom:0; left:0; right:0;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:5px 7px; background: linear-gradient(0deg, rgba(0,0,0,0.65), transparent);
+  }
+  .tile .name{ font-size:11px; font-weight:500; color:#fff; display:flex; align-items:center; gap:5px; }
+  .tile .meter{ display:flex; gap:2px; align-items:flex-end; height:10px; }
+  .tile .meter i{ width:2px; background:var(--accent); border-radius:1px; height:2px; transition:height .08s linear; }
+  .tile .mute-badge{ display:none; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:var(--danger); flex-shrink:0; }
+  .tile.muted .mute-badge{ display:flex; }
+  .tile.muted .meter{ display:none; }
+  .tile .drag-hint{
+    position:absolute; top:5px; right:6px; opacity:0.5; pointer-events:none;
+  }
+  .resize-ctrl{ display:flex; gap:3px; margin-right:6px; flex-shrink:0; }
+  .resize-btn{
+    width:15px; height:15px; border-radius:4px; border:none;
+    background:rgba(255,255,255,0.16); color:#fff; font-size:12px; line-height:1;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    transition: background .12s ease; padding:0;
+  }
+  .resize-btn:hover{ background:rgba(255,255,255,0.32); }
+
+  /* floating control dock — overlays the stage, auto-hides in fullscreen */
+  .dock-overlay{
+    position:absolute; left:50%; bottom:18px; transform:translateX(-50%) translateY(0);
+    z-index:20; opacity:1; transition: opacity .25s ease, transform .25s ease;
+  }
+  .stage.is-fullscreen .dock-overlay{ opacity:0; transform:translateX(-50%) translateY(12px); pointer-events:none; }
+  .stage.is-fullscreen .dock-overlay.show{ opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
+
+  .dock{
+    display:flex; align-items:center; gap:8px;
+    background: rgba(25,28,38,0.88); backdrop-filter: blur(10px);
+    border:1px solid var(--border);
+    padding:8px; border-radius:16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  }
+  .dock-btn{
+    width:46px; height:46px; border-radius:11px; border:1px solid transparent;
+    background: var(--surface-2); color:var(--text);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; transition: all .15s ease; position:relative;
+  }
+  .dock-btn:hover{ border-color: var(--border); }
+  .dock-btn svg{ width:19px; height:19px; }
+  .dock-btn.off{ background: var(--danger-dim); color: var(--danger); }
+  .dock-btn.sharing{ background: var(--accent-dim); color: var(--accent); }
+  .dock-btn.active-toggle{ background: var(--accent-dim); color: var(--accent); }
+  .dock-sep{ width:1px; height:26px; background:var(--border); margin:0 4px; }
+  .dock-btn.leave{ background: var(--danger); color:#1A0805; }
+  .dock-btn.leave:hover{ background:#ff8266; }
+  .dock-btn .label{
+    position:absolute; bottom:-24px; left:50%; transform:translateX(-50%);
+    font-size:10px; color:var(--text-faint); white-space:nowrap; font-family:var(--mono);
+    opacity:0; transition:opacity .12s ease; pointer-events:none;
+  }
+  .dock-btn:hover .label{ opacity:1; }
+
+  .toast{
+    position:fixed; top:64px; left:50%; transform:translateX(-50%);
+    background: var(--surface-2); border:1px solid var(--border);
+    padding:9px 16px; border-radius:9px; font-size:12.5px; color:var(--text);
+    font-family:var(--mono); z-index:50; opacity:0; pointer-events:none;
+    transition: opacity .2s ease, transform .2s ease;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(4px); }
+
+  @media (prefers-reduced-motion: reduce){
+    .pulse-dot, .card::before, .dots span{ animation:none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="app">
+
+  <!-- ============ LOBBY ============ -->
+  <div id="lobby">
+    <div class="lobby-row">
+      <div class="side-panel">
+        <div class="side-tag">𝚅𝙹</div>
+        <img class="side-gif" src="assets/faye.gif" alt="">
+      </div>
+
+      <div class="lobby-center">
+        <div class="logo"><div class="mark"><span></span></div> UPLINK</div>
+
+        <div class="card">
+      <div id="entryPane" class="pane active">
+        <h1>Start a live session</h1>
+        <p class="sub">Screen share, camera and mic, one other person. Create a room, send them the link, and you're connected — video runs directly between your browsers.</p>
+
+        <div class="tabs">
+          <button id="tabCreate" class="active">Create room</button>
+          <button id="tabJoin">Join room</button>
+        </div>
+
+        <div id="paneCreate" class="pane active">
+          <label for="nameCreate">Your name</label>
+          <input type="text" id="nameCreate" placeholder="e.g. Shekhar" maxlength="24">
+          <button class="btn-primary" id="btnCreate">Create room</button>
+        </div>
+
+        <div id="paneJoin" class="pane">
+          <label for="nameJoin">Your name</label>
+          <input type="text" id="nameJoin" placeholder="e.g. Priya" maxlength="24">
+          <label for="codeJoin">Room code</label>
+          <input type="text" id="codeJoin" class="mono" placeholder="XXXX-XX" maxlength="9">
+          <button class="btn-primary" id="btnJoin">Join room</button>
+        </div>
+
+        <div class="error-line" id="errLine"></div>
+      </div>
+
+      <div id="waitState">
+        <div class="eyebrow" style="margin-bottom:10px;">Room ready</div>
+        <div class="code-display" id="codeOut">— — — —</div>
+        <div class="copy-row">
+          <button class="btn-ghost" id="btnCopy">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V5a1 1 0 0 1 1-1h11"/></svg>
+            Copy invite link
+          </button>
+        </div>
+        <div class="waiting-line">
+          <span class="pulse-dot"></span>
+          Waiting for the other person to join<span class="dots"><span>.</span><span>.</span><span>.</span></span>
+        </div>
+        <div class="self-preview">
+          <video id="lobbyPreview" autoplay muted playsinline></video>
+          <div class="tag">SELF PREVIEW</div>
+        </div>
+      </div>
+      </div>
+      </div>
+
+      <div class="side-panel">
+        <div class="side-tag">ᕓ𐌔</div>
+        <img class="side-gif" src="assets/weeknd.gif" alt="">
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ CALL SCREEN ============ -->
+  <div id="callScreen">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="logo" style="font-size:13px;"><div class="mark" style="width:16px;height:16px;"><span style="width:5px;height:5px;"></span></div>UPLINK</div>
+        <div class="chip copy-chip" id="roomChip" title="Copy room code">ROOM <b id="roomChipCode">—</b></div>
+      </div>
+      <div class="topbar-right">
+        <div class="chip live-chip" id="connChip"><span class="pulse-dot idle-dot" id="connDot"></span> <span id="connText">CONNECTING</span></div>
+        <div class="chip" id="timerChip">00:00</div>
+      </div>
+    </div>
+
+    <div class="stage-wrap">
+      <div class="stage" id="stage">
+        <div class="no-signal" id="noSignal">
+          <div class="bars"><i></i><i></i><i></i><i></i><i></i></div>
+          <span id="noSignalText">No signal — waiting for peer</span>
+        </div>
+        <video id="stageVideo" autoplay playsinline style="display:none;"></video>
+        <div class="stage-label" id="stageLabel" style="display:none;"></div>
+
+        <div class="tile" id="selfTile">
+          <video id="selfVideo" autoplay muted playsinline class="mirror"></video>
+          <div class="no-cam" id="selfNoCam" style="display:none;">Y</div>
+          <div class="meta">
+            <div class="resize-ctrl">
+              <button class="resize-btn" data-target="selfTile" data-delta="-1" title="Shrink">−</button>
+              <button class="resize-btn" data-target="selfTile" data-delta="1" title="Enlarge">+</button>
+            </div>
+            <div class="name">You</div>
+            <div class="meter" id="selfMeter"><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="mute-badge">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#1A0805" stroke-width="3"><line x1="2" y1="2" x2="22" y2="22"/><path d="M12 19v3"/><path d="M19 10v1a7 7 0 0 1-11.95 4.95"/><path d="M5 10v1c0 .69.1 1.36.3 2"/><path d="M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-.16 1"/></svg>
+            </div>
+          </div>
+        </div>
+        <div class="tile" id="remoteTile" style="display:none;">
+          <video id="remoteVideo" autoplay playsinline></video>
+          <div class="no-cam" id="remoteNoCam" style="display:none;"></div>
+          <div class="meta">
+            <div class="resize-ctrl">
+              <button class="resize-btn" data-target="remoteTile" data-delta="-1" title="Shrink">−</button>
+              <button class="resize-btn" data-target="remoteTile" data-delta="1" title="Enlarge">+</button>
+            </div>
+            <div class="name" id="remoteName">Peer</div>
+            <div class="meter" id="remoteMeter"><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="mute-badge">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#1A0805" stroke-width="3"><line x1="2" y1="2" x2="22" y2="22"/><path d="M12 19v3"/><path d="M19 10v1a7 7 0 0 1-11.95 4.95"/><path d="M5 10v1c0 .69.1 1.36.3 2"/><path d="M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-.16 1"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="dock-overlay" id="dockOverlay">
+          <div class="dock">
+            <button class="dock-btn" id="btnMic" title="Mute">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11a7 7 0 0 1-14 0"/><path d="M12 18v4"/></svg>
+              <span class="label">mic</span>
+            </button>
+            <button class="dock-btn" id="btnCam" title="Turn off camera">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="6" width="14" height="12" rx="2.5"/><path d="M16 10.5 22 7v10l-6-3.5"/></svg>
+              <span class="label">camera</span>
+            </button>
+            <button class="dock-btn" id="btnShare" title="Share screen">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/><path d="M9 11l3-3 3 3"/><path d="M12 8v6"/></svg>
+              <span class="label">share</span>
+            </button>
+            <button class="dock-btn" id="btnFullscreen" title="Full screen">
+              <svg id="fsIconExpand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+              <svg id="fsIconCompress" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="display:none;"><path d="M9 3v3a2 2 0 0 1-2 2H4"/><path d="M15 3v3a2 2 0 0 0 2 2h3"/><path d="M9 21v-3a2 2 0 0 0-2-2H4"/><path d="M15 21v-3a2 2 0 0 1 2-2h3"/></svg>
+              <span class="label">fullscreen</span>
+            </button>
+            <div class="dock-sep"></div>
+            <button class="dock-btn leave" id="btnLeave" title="Leave call">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8.5C7 4 17 4 21 8.5"/><path d="M6.5 12c3.2-2.6 7.8-2.6 11 0"/><path d="M10 15.5c1.2-.9 2.8-.9 4 0"/><line x1="4" y1="4" x2="20" y2="20"/></svg>
+              <span class="label">leave</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+(() => {
+  let myName = '', roomCode = '', isHost = false, polite = false;
+  let localStream = null, screenStream = null;
+  let pc = null, channel = null;
+  let makingOffer = false, ignoreOffer = false, localTracksAdded = false;
+  let remoteTrackRoles = {};
+  let pendingTracks = {};
+  let remoteCamStream = null, remoteScreenStream = null;
+  let peerName = 'Peer', peerSharing = false;
+  let callStartTime = null, timerInterval = null;
+  let selfAnalyser, remoteAnalyser;
+
+  const $ = id => document.getElementById(id);
+
+  function toast(msg){
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._h);
+    toast._h = setTimeout(()=> t.classList.remove('show'), 2200);
+  }
+
+  function genCode(){
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let s = '';
+    for(let i=0;i<6;i++) s += chars[Math.floor(Math.random()*chars.length)];
+    return s.slice(0,4) + '-' + s.slice(4);
+  }
+
+  $('tabCreate').onclick = () => switchTab('create');
+  $('tabJoin').onclick = () => switchTab('join');
+  function switchTab(which){
+    $('tabCreate').classList.toggle('active', which==='create');
+    $('tabJoin').classList.toggle('active', which==='join');
+    $('paneCreate').classList.toggle('active', which==='create');
+    $('paneJoin').classList.toggle('active', which==='join');
+    $('errLine').style.display='none';
+  }
+
+  function showErr(msg){ const e = $('errLine'); e.textContent = msg; e.style.display = 'block'; }
+
+  async function getLocalMedia(){
+    try{
+      localStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+    }catch(e){
+      try{
+        localStream = await navigator.mediaDevices.getUserMedia({ video:false, audio:true });
+        toast('Camera unavailable — continuing with audio only');
+      }catch(e2){
+        showErr('Could not access camera or microphone. Check browser permissions and try again.');
+        throw e2;
+      }
+    }
+    return localStream;
+  }
+
+  function attachAnalyser(stream, onLevel){
+    try{
+      const ctx = new (window.AudioContext||window.webkitAudioContext)();
+      const src = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      src.connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      function tick(){
+        analyser.getByteFrequencyData(data);
+        let sum=0; for(let i=0;i<data.length;i++) sum+=data[i];
+        onLevel(sum/data.length);
+        requestAnimationFrame(tick);
+      }
+      tick();
+      return analyser;
+    }catch(e){ return null; }
+  }
+
+  function drawMeter(meterEl, level){
+    const bars = meterEl.querySelectorAll('i');
+    const norm = Math.min(1, level/70);
+    bars.forEach((b,i)=>{
+      const thresh = (i+1)/bars.length;
+      const h = norm > thresh - 0.2 ? 3 + norm*9 : 2;
+      b.style.height = h+'px';
+    });
+  }
+
+  // ---------- draggable tiles ----------
+  function makeDraggable(el, containerEl){
+    let dragging=false, startX=0, startY=0, origLeft=0, origTop=0;
+    el.addEventListener('pointerdown', e => {
+      if(e.target.closest('.resize-btn')) return;
+      dragging = true;
+      el.setPointerCapture(e.pointerId);
+      const rect = el.getBoundingClientRect();
+      const contRect = containerEl.getBoundingClientRect();
+      origLeft = rect.left - contRect.left;
+      origTop = rect.top - contRect.top;
+      startX = e.clientX; startY = e.clientY;
+      el.style.right = 'auto'; el.style.bottom = 'auto';
+      el.style.left = origLeft + 'px'; el.style.top = origTop + 'px';
+      el.classList.add('dragging');
+    });
+    el.addEventListener('pointermove', e => {
+      if(!dragging) return;
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      const contRect = containerEl.getBoundingClientRect();
+      let newLeft = origLeft + dx, newTop = origTop + dy;
+      newLeft = Math.max(0, Math.min(contRect.width - el.offsetWidth, newLeft));
+      newTop = Math.max(0, Math.min(contRect.height - el.offsetHeight, newTop));
+      el.style.left = newLeft + 'px';
+      el.style.top = newTop + 'px';
+    });
+    function endDrag(e){
+      if(!dragging) return;
+      dragging = false;
+      el.classList.remove('dragging');
+    }
+    el.addEventListener('pointerup', endDrag);
+    el.addEventListener('pointercancel', endDrag);
+  }
+  makeDraggable($('selfTile'), $('stage'));
+  makeDraggable($('remoteTile'), $('stage'));
+
+  // ---------- resize tiles ----------
+  const tileWidths = { selfTile: 168, remoteTile: 168 };
+  const TILE_MIN = 120, TILE_MAX = 340, TILE_STEP = 24;
+  function resizeTile(id, dir){
+    const el = $(id);
+    let w = tileWidths[id] + dir * TILE_STEP;
+    w = Math.max(TILE_MIN, Math.min(TILE_MAX, w));
+    tileWidths[id] = w;
+    el.style.width = w + 'px';
+  }
+  document.querySelectorAll('.resize-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      resizeTile(btn.dataset.target, parseInt(btn.dataset.delta, 10));
+    });
+    btn.addEventListener('pointerdown', e => e.stopPropagation());
+  });
+
+  // ---------- fullscreen ----------
+  const stageEl = $('stage');
+  const dockOverlay = $('dockOverlay');
+  let hideTimer = null;
+
+  function isStageFullscreen(){
+    return document.fullscreenElement === stageEl || document.webkitFullscreenElement === stageEl;
+  }
+
+  $('btnFullscreen').onclick = () => {
+    if(!isStageFullscreen()){
+      (stageEl.requestFullscreen || stageEl.webkitRequestFullscreen || function(){}).call(stageEl);
+    } else {
+      (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
+    }
+  };
+
+  function onFullscreenChange(){
+    const fs = isStageFullscreen();
+    stageEl.classList.toggle('is-fullscreen', fs);
+    $('fsIconExpand').style.display = fs ? 'none' : 'block';
+    $('fsIconCompress').style.display = fs ? 'block' : 'none';
+    if(fs){ armDockAutoHide(); }
+    else { dockOverlay.classList.remove('show'); clearTimeout(hideTimer); stageEl.style.cursor=''; }
+  }
+  document.addEventListener('fullscreenchange', onFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+
+  function armDockAutoHide(){
+    dockOverlay.classList.add('show');
+    stageEl.style.cursor = '';
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      dockOverlay.classList.remove('show');
+      stageEl.style.cursor = 'none';
+    }, 2600);
+  }
+  stageEl.addEventListener('mousemove', () => { if(isStageFullscreen()) armDockAutoHide(); });
+  stageEl.addEventListener('mouseenter', () => { if(isStageFullscreen()) armDockAutoHide(); });
+
+  // ---------- create room ----------
+  $('btnCreate').onclick = async () => {
+    const name = $('nameCreate').value.trim();
+    if(!name) return showErr('Enter your name first.');
+    $('errLine').style.display='none';
+    myName = name; isHost = true; polite = false;
+    roomCode = genCode();
+
+    $('btnCreate').disabled = true;
+    try{ await getLocalMedia(); } catch(e){ $('btnCreate').disabled=false; return; }
+    $('btnCreate').disabled = false;
+
+    $('lobbyPreview').srcObject = localStream;
+    selfAnalyser = attachAnalyser(localStream, lvl => drawMeter($('selfMeter'), lvl));
+
+    $('codeOut').textContent = roomCode;
+    $('entryPane').classList.remove('active');
+    $('waitState').classList.add('active');
+    await openChannel();
+  };
+
+  $('btnCopy').onclick = () => {
+    const link = location.origin + '/?room=' + encodeURIComponent(roomCode);
+    navigator.clipboard?.writeText(link).catch(()=>{});
+    toast('Invite link copied');
+  };
+
+  // ---------- join room ----------
+  $('btnJoin').onclick = async () => {
+    const name = $('nameJoin').value.trim();
+    const code = $('codeJoin').value.trim().toUpperCase();
+    if(!name) return showErr('Enter your name first.');
+    if(!code) return showErr('Enter the room code you were given.');
+    $('errLine').style.display='none';
+    myName = name; isHost = false; polite = true;
+    roomCode = code;
+
+    $('btnJoin').disabled = true;
+    try{ await getLocalMedia(); } catch(e){ $('btnJoin').disabled=false; return; }
+    $('btnJoin').disabled = false;
+
+    enterCallScreen();
+    await openChannel();
+    createPeerConnection();
+    addLocalTracks();
+    send({ type:'hello', name: myName });
+  };
+
+  function openChannel(){
+    return new Promise(resolve => {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      channel = new WebSocket(proto + '://' + location.host + '/ws?room=' + encodeURIComponent(roomCode));
+      channel.onopen = () => resolve();
+      channel.onmessage = ev => { try{ handleMessage(JSON.parse(ev.data)); }catch(e){} };
+      channel.onclose = () => setConnStatus('ended');
+    });
+  }
+  function send(msg){ if(channel && channel.readyState === 1) channel.send(JSON.stringify(msg)); }
+
+  async function handleMessage(msg){
+    switch(msg.type){
+      case 'hello': {
+        peerName = msg.name;
+        if(isHost){
+          if(!pc){ createPeerConnection({ suppressInitialOffer: true }); }
+          enterCallScreen();
+        }
+        $('remoteName').textContent = peerName;
+        setConnStatus('connecting');
+        break;
+      }
+      case 'sdp': {
+        if(!pc){ createPeerConnection({ suppressInitialOffer: true }); }
+        const desc = msg.description;
+        const offerCollision = desc.type === 'offer' && (makingOffer || pc.signalingState !== 'stable');
+        ignoreOffer = !polite && offerCollision;
+        if(ignoreOffer) return;
+        await pc.setRemoteDescription(desc);
+        if(desc.type === 'offer'){
+          await pc.setLocalDescription();
+          send({ type:'sdp', description: pc.localDescription });
+          pc._suppressOffer = false; // first answer sent — future renegotiations (e.g. screen share, or our own camera/mic below) behave normally
+        }
+        break;
+      }
+      case 'candidate': {
+        try{ if(pc) await pc.addIceCandidate(msg.candidate); }
+        catch(e){ if(!ignoreOffer) console.warn(e); }
+        break;
+      }
+      case 'track-meta': {
+        remoteTrackRoles[msg.trackId] = msg.role;
+        if(pendingTracks[msg.trackId]){
+          assignRemoteTrack(pendingTracks[msg.trackId], msg.role);
+          delete pendingTracks[msg.trackId];
+        }
+        break;
+      }
+      case 'screen-ended': {
+        peerSharing = false;
+        remoteScreenStream = null;
+        renderStage();
+        break;
+      }
+      case 'mute-state': {
+        $('remoteTile').classList.toggle('muted', msg.muted);
+        break;
+      }
+      case 'bye': {
+        setConnStatus('ended');
+        toast(peerName + ' left the call');
+        remoteCamStream = null; remoteScreenStream = null; peerSharing = false;
+        $('remoteTile').style.display = 'none';
+        renderStage();
+        break;
+      }
+    }
+  }
+
+  const ICE_SERVERS = [
+    { urls: 'stun:stun.relay.metered.ca:80' },
+    { urls: 'turn:global.relay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:global.relay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turns:global.relay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+  ];
+
+  function createPeerConnection(opts){
+    pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    pc._suppressOffer = !!(opts && opts.suppressInitialOffer);
+
+    pc.onnegotiationneeded = async () => {
+      if(pc._suppressOffer) return; // let the incoming offer arrive instead of racing to send our own
+      try{
+        makingOffer = true;
+        await pc.setLocalDescription();
+        send({ type:'sdp', description: pc.localDescription });
+      }catch(e){ console.warn(e); }
+      finally{ makingOffer = false; }
+    };
+
+    pc.onicecandidate = ({candidate}) => { if(candidate) send({ type:'candidate', candidate }); };
+
+    pc.onconnectionstatechange = () => {
+      if(pc.connectionState === 'connected'){
+        setConnStatus('live');
+        // Only now — with the transport actually up — add our own camera/mic.
+        // Doing this immediately after answering (before ICE/DTLS finishes) was the bug:
+        // it raced the still-connecting transport instead of riding an already-live one,
+        // the way screen share (which always starts well after connection) reliably does.
+        if(!localTracksAdded) addLocalTracks();
+      }
+      else if(['disconnected','failed'].includes(pc.connectionState)) setConnStatus('ended');
+    };
+
+    pc.ontrack = (ev) => {
+      const trackId = ev.track.id;
+      const role = remoteTrackRoles[trackId];
+      if(role) assignRemoteTrack(ev, role);
+      else pendingTracks[trackId] = ev;
+    };
+  }
+
+  function addLocalTracks(){
+    if(localTracksAdded) return;
+    localTracksAdded = true;
+    localStream.getTracks().forEach(track => {
+      pc.addTrack(track, localStream);
+      send({ type:'track-meta', role:'camera', trackId: track.id });
+    });
+  }
+
+  function safePlay(el){
+    const p = el.play();
+    if(p && p.catch) p.catch(() => {
+      // Autoplay was blocked — retry on the next tap/click anywhere on the page.
+      const retry = () => { el.play().catch(()=>{}); document.removeEventListener('click', retry); document.removeEventListener('touchstart', retry); };
+      document.addEventListener('click', retry, { once:true });
+      document.addEventListener('touchstart', retry, { once:true });
+    });
+  }
+
+  function assignRemoteTrack(ev, role){
+    const track = ev.track;
+    if(role === 'camera'){
+      if(!remoteCamStream) remoteCamStream = new MediaStream();
+      remoteCamStream.addTrack(track);
+      $('remoteVideo').srcObject = remoteCamStream;
+      safePlay($('remoteVideo'));
+      $('remoteTile').style.display = 'block';
+      if(track.kind === 'audio'){
+        remoteAnalyser = attachAnalyser(new MediaStream([track]), lvl => drawMeter($('remoteMeter'), lvl));
+      }
+    } else if(role === 'screen'){
+      if(!remoteScreenStream) remoteScreenStream = new MediaStream();
+      remoteScreenStream.addTrack(track);
+      peerSharing = true;
+      if(track.kind === 'video'){
+        track.onended = () => { peerSharing = false; remoteScreenStream = null; renderStage(); };
+      }
+    }
+    renderStage();
+  }
+
+  function enterCallScreen(){
+    document.getElementById('lobby').style.display = 'none';
+    $('callScreen').classList.add('active');
+    $('roomChipCode').textContent = roomCode;
+    $('selfVideo').srcObject = localStream;
+    safePlay($('selfVideo'));
+    if(!localStream.getVideoTracks().length){ $('selfNoCam').style.display='flex'; }
+    callStartTime = Date.now();
+    timerInterval = setInterval(updateTimer, 1000);
+    renderStage();
+  }
+
+  function updateTimer(){
+    const s = Math.floor((Date.now()-callStartTime)/1000);
+    const mm = String(Math.floor(s/60)).padStart(2,'0');
+    const ss = String(s%60).padStart(2,'0');
+    $('timerChip').textContent = mm+':'+ss;
+  }
+
+  function setConnStatus(state){
+    const dot = $('connDot'), text = $('connText');
+    if(state==='live'){ dot.classList.remove('idle-dot'); text.textContent='LIVE'; }
+    else if(state==='connecting'){ dot.classList.add('idle-dot'); text.textContent='CONNECTING'; }
+    else { dot.classList.add('idle-dot'); text.textContent='ENDED'; }
+  }
+
+  function renderStage(){
+    const stageVideo = $('stageVideo');
+    const noSignal = $('noSignal');
+    const label = $('stageLabel');
+
+    if(remoteScreenStream && peerSharing){
+      stageVideo.srcObject = remoteScreenStream;
+      stageVideo.muted = false;
+      stageVideo.style.display='block'; noSignal.style.display='none';
+      safePlay(stageVideo);
+      label.style.display='flex'; label.innerHTML = '<span class="pulse-dot"></span> '+peerName+' is sharing their screen';
+    } else if(screenStream){
+      stageVideo.srcObject = screenStream;
+      stageVideo.muted = true; // avoid echoing your own shared tab audio back to yourself
+      stageVideo.style.display='block'; noSignal.style.display='none';
+      safePlay(stageVideo);
+      label.style.display='flex'; label.innerHTML = '<span class="pulse-dot"></span> You are sharing your screen';
+    } else if(remoteCamStream && remoteCamStream.getVideoTracks().length){
+      stageVideo.srcObject = remoteCamStream;
+      stageVideo.muted = false;
+      stageVideo.style.display='block'; noSignal.style.display='none';
+      safePlay(stageVideo);
+      label.style.display='none';
+    } else {
+      stageVideo.style.display='none'; noSignal.style.display='flex';
+      label.style.display='none';
+      $('noSignalText').textContent = remoteCamStream ? 'Waiting for video' : 'No signal — waiting for peer';
+    }
+  }
+
+  let micOn = true, camOn = true, sharing = false;
+
+  $('btnMic').onclick = () => {
+    micOn = !micOn;
+    localStream.getAudioTracks().forEach(t => t.enabled = micOn);
+    $('btnMic').classList.toggle('off', !micOn);
+    $('selfTile').classList.toggle('muted', !micOn);
+    send({ type:'mute-state', muted: !micOn });
+  };
+
+  $('btnCam').onclick = () => {
+    camOn = !camOn;
+    localStream.getVideoTracks().forEach(t => t.enabled = camOn);
+    $('btnCam').classList.toggle('off', !camOn);
+    $('selfNoCam').style.display = camOn ? 'none' : 'flex';
+  };
+
+  $('btnShare').onclick = async () => {
+    if(!sharing){
+      try{
+        screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            frameRate: { ideal: 100, max: 100 },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        });
+      }catch(e){ toast('Screen share cancelled'); return; }
+
+      const videoTrack = screenStream.getVideoTracks()[0];
+      if(videoTrack) videoTrack.contentHint = 'motion'; // bias encoder toward frame rate over detail
+
+      screenStream.getTracks().forEach(track => {
+        if(pc) pc.addTrack(track, screenStream);
+        send({ type:'track-meta', role:'screen', trackId: track.id });
+      });
+
+      sharing = true;
+      $('btnShare').classList.add('sharing');
+      renderStage();
+      if(videoTrack) videoTrack.onended = () => stopSharing();
+    } else {
+      stopSharing();
+    }
+  };
+
+  function stopSharing(){
+    if(screenStream){
+      screenStream.getTracks().forEach(t => {
+        t.stop();
+        if(pc){
+          const sender = pc.getSenders().find(s => s.track === t);
+          if(sender) pc.removeTrack(sender);
+        }
+      });
+    }
+    screenStream = null;
+    sharing = false;
+    $('btnShare').classList.remove('sharing');
+    send({ type:'screen-ended' });
+    renderStage();
+  }
+
+  $('btnLeave').onclick = () => { send({ type:'bye' }); cleanupAndReturn(); };
+  $('roomChip').onclick = () => {
+    const link = location.origin + '/?room=' + encodeURIComponent(roomCode);
+    navigator.clipboard?.writeText(link).catch(()=>{});
+    toast('Invite link copied');
+  };
+
+  // ---------- prefill join code from a shared link ----------
+  (function prefillFromLink(){
+    const params = new URLSearchParams(location.search);
+    const roomParam = params.get('room');
+    if(roomParam){
+      switchTab('join');
+      $('codeJoin').value = roomParam.toUpperCase();
+    }
+  })();
+
+  function cleanupAndReturn(){
+    clearInterval(timerInterval);
+    if(isStageFullscreen()) (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
+    if(pc){ pc.close(); pc = null; }
+    if(localStream) localStream.getTracks().forEach(t=>t.stop());
+    if(screenStream) screenStream.getTracks().forEach(t=>t.stop());
+    if(channel) channel.close();
+    setTimeout(()=> location.reload(), 300);
+  }
+
+  window.addEventListener('beforeunload', () => { send && send({ type:'bye' }); });
+})();
+</script>
+</body>
+</html>
